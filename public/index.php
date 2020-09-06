@@ -14,7 +14,7 @@ if (!empty($_FILES['ini']['tmp_name']) && filesize($_FILES['ini']['tmp_name']) >
 
 $rules = parse_ini_file($file_ini, true);
 $matrice = new MatriceFields($rules);
-$matrice->check_maxlength = true;
+$matrice->checkMaxlength = true;
 
 // Vérification des champs
 if ('matrice-example.ini' === basename($file_ini)) {
@@ -22,12 +22,12 @@ if ('matrice-example.ini' === basename($file_ini)) {
 
     $check_fields = [];
     foreach ($load_data as $data_check) {
-        $check_fields[] = $matrice->check_fields($data_check);
+        $check_fields[] = $matrice->checkFields($data_check);
     }
 }
 
 // Export sous forme de table pour de la documentation
-$table = $matrice->export_fields_to_user();
+$table = $matrice->exportFieldsToUser();
 
 ?>
 <!DOCTYPE html>
@@ -66,7 +66,7 @@ $table = $matrice->export_fields_to_user();
         <?php foreach ($load_data as $data_check): ?>
         <div class="row">
             <div class="col-sm-7">
-            <?php $check_fields = $matrice->check_fields($data_check); ?>
+            <?php $check_fields = $matrice->checkFields($data_check); ?>
 
             <?php if (true !== $check_fields): ?>
                 <p>Erreurs détectés lors du parsage pour la ligne de csv en cours: </p>
@@ -78,7 +78,7 @@ $table = $matrice->export_fields_to_user();
 
             <?php else: ?>
                 <p>Aucune erreur trouvé dans les data, conversion des données chargés au format voulu: </p>
-                <?php var_dump($matrice->export_fields_to_array()); ?>
+                <?php var_dump($matrice->exportFieldsToArray()); ?>
 
             <?php endif; ?>
             </div>

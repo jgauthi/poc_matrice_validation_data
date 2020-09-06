@@ -3,7 +3,7 @@
  * @name MatriceFields
  * @note: Tool used to process an array of data with respect to a matrix
  * @author: Jgauthi <github.com/jgauthi>, created at [21jun2018]
- * @version 1.0
+ * @version 2.0
 
  ******************************************************************************************************/
 namespace Jgauthi\Tools\Matrice;
@@ -14,10 +14,10 @@ use InvalidArgumentException;
 
 class MatriceFields
 {
-    private $rules;
-    private $export_array = null;
-    public $check_maxlength = false;
-    public $key_case_sensitive = false;
+    private array $rules;
+    private ?array $exportArray = null;
+    public bool $checkMaxlength = false;
+    public bool $keyCaseSensitive = false;
 
     public function __construct(array $rules)
     {
@@ -28,14 +28,14 @@ class MatriceFields
      * Vérifier la compatibilité des champs requis avec les données fournits
      * (pour éviter d'utiliser des données "Hors sujet").
      */
-    public function check_titles(array $data)
+    public function checkTitles(array $data): bool
     {
         $data_title = array_keys($data);
         $rules_title = array_keys($this->rules);
 
-        if (!$this->key_case_sensitive) {
-            $rules_title = array_map('strtolower', $rules_title);
-            $data_title = array_map('strtolower', $data_title);
+        if (!$this->keyCaseSensitive) {
+            $rules_title = array_map('mb_strtolower', $rules_title);
+            $data_title = array_map('mb_strtolower', $data_title);
         }
 
         return count(array_intersect($data_title, $rules_title)) === count($data_title);
@@ -43,12 +43,13 @@ class MatriceFields
 
     /**
      * Vérifie que chaque champ correct aux règles établies dans la matrice.
+     * @return array|bool
      */
-    public function check_fields(array $data)
+    public function checkFields(array $data)
     {
         $errors = $export = [];
 
-        if (!$this->key_case_sensitive) {
+        if (!$this->keyCaseSensitive) {
             $data = array_change_key_case($data, CASE_LOWER);
             $this->rules = array_change_key_case($this->rules, CASE_LOWER);
         }
@@ -70,144 +71,166 @@ class MatriceFields
                     continue;
                 }
 
+                // Champ OK
                 $value = null;
-            } else {
-                if ($this->check_maxlength && !empty($current_rule['maxlength'])) {
-                    $count = mb_strlen($value);
-                    if ($count > $current_rule['maxlength']) {
-                        $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) dépasse le nombre de caractère authorisé ({$current_rule['maxlength']}).";
+                if (!empty($current_rule['field_name'])) {
+                    $export[$current_rule['field_name']] = $value;
+                }
+                continue;
+            }
+
+            if ($this->checkMaxlength && !empty($current_rule['maxlength'])) {
+                $count = mb_strlen($value);
+                if ($count > $current_rule['maxlength']) {
+                    $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) dépasse le nombre de caractère authorisé ({$current_rule['maxlength']}).";
+                    continue;
+                }
+            }
+
+            if (!empty($current_rule['expected_value'])) {
+                if (preg_match('#,#', $current_rule['expected_value'])) {
+                    $expected_value = explode(',', $current_rule['expected_value']);
+                    if (!preg_grep("#{$value}#i", $expected_value)) {
+                        $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) a une valeur incorrecte: {$value}".
+                            ', attendue: '.implode(' ou ', $expected_value);
+
+                        if (!empty($current_rule['comment'])) {
+                            $errors[$key] .= " ({$current_rule['comment']})";
+                        }
+
                         continue;
                     }
+                } elseif (!preg_match("#{$current_rule['expected_value']}#i", $value)) {
+                    $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) a une valeur incorrecte: {$value}";
+
+                    if (!empty($current_rule['comment'])) {
+                        $errors[$key] .= ', '.$current_rule['comment'];
+                    }
+
+                    continue;
                 }
+            }
 
-                if (!empty($current_rule['expected_value'])) {
-                    if (preg_match('#,#', $current_rule['expected_value'])) {
-                        $expected_value = explode(',', $current_rule['expected_value']);
-                        if (!preg_grep("#{$value}#i", $expected_value)) {
-                            $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) a une valeur incorrecte: {$value}".
-                                ', attendue: '.implode(' ou ', $expected_value);
+            // Type de champs
+            if (!empty($current_rule['type'])) {
+                switch ($current_rule['type']) {
+                    case 'email':
+                        if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                            $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être email valide.";
+                            continue 2;
+                        }
+                        break;
 
+                    case 'int':
+                        if (!is_numeric($value)) {
+                            $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être nombre valide.";
+                            continue 2;
+                        }
+                        break;
+
+                    case 'url':
+                        //if(!filter_var($value, FILTER_VALIDATE_URL)) // Certains caractères excentrique de econocom ne passait pas.
+                        if (!preg_match('#https?://([^/]+)/#', $value)) {
+                            $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être une url valide.";
+                            continue 2;
+                        }
+                        break;
+
+                    case 'date':
+                        // Format de date spécifié
+                        if (!empty($current_rule['date_format'])) {
+                            try {
+                                $value = DateTime::createFromFormat($current_rule['date_format'], $value);
+                            } catch (Exception $e) {
+                                $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être une date valide: ".$e->getMessage();
+                                continue 2;
+                            }
+
+                            $value = $value->format('Y-m-d');
+                        // Date US
+                        } elseif (preg_match("#^([0-9]{4})(\/|-)?([0-1]?[0-9])(\/|-)?([0-3]?[0-9])$#i", $value, $row)) {
+                            $value = sprintf('%4d-%02d-%02d', $row[1], $row[3], $row[5]);
+                        // Date FR
+                        } elseif (preg_match("#^([0-3]?[0-9])(\/|-)?([0-1]?[0-9])(\/|-)?([0-9]{4})$#i", $value, $row)) {
+                            $value = sprintf('%4d-%02d-%02d', $row[5], $row[3], $row[1]);
+                        // Date FR (année courte)
+                        } elseif (preg_match("#^([0-3]?[0-9])(\/|-)?([0-1]?[0-9])(\/|-)?([0-9]{2})$#i", $value, $row)) {
+                            $value = sprintf('20%d-%02d-%02d', $row[5], $row[3], $row[1]);
+                        // Date inconnu
+                        } else {
+                            $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être une date valide";
                             if (!empty($current_rule['comment'])) {
                                 $errors[$key] .= " ({$current_rule['comment']})";
                             }
 
-                            continue;
+                            $errors[$key] .= '.';
+                            continue 2;
                         }
-                    } elseif (!preg_match("#{$current_rule['expected_value']}#i", $value)) {
-                        $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) a une valeur incorrecte: {$value}";
+                        break;
 
-                        if (!empty($current_rule['comment'])) {
-                            $errors[$key] .= ', '.$current_rule['comment'];
+                    case 'datetime':
+                        // Date + Heure US
+                        if (preg_match("#^([0-9]{4})(\/|-)?([0-1]?[0-9])(\/|-)?([0-3]?[0-9]) ([0-9]{2}):([0-9]{2})(:[0-9]{2})?$#i", $value, $row)) {
+                            $value = sprintf(
+                                '%4d-%02d-%02d %02d:%02d:%02d',
+                                $row[1],
+                                $row[3],
+                                $row[5],
+                                $row[6],
+                                $row[7],
+                                $row[9] ?? 0
+                            );
                         }
 
-                        continue;
-                    }
-                }
+                        // Date + Heure FR
+                        elseif (preg_match("#^([0-3]?[0-9])(\/|-)?([0-1]?[0-9])(\/|-)?([0-9]{4}) ([0-9]{2}):([0-9]{2})(:[0-9]{2})?$#i", $value, $row)) {
+                            $value = sprintf(
+                                '%4d-%02d-%02d %02d:%02d:%02d',
+                                $row[5],
+                                $row[3],
+                                $row[1],
+                                $row[6],
+                                $row[7],
+                                $row[9] ?? 0
+                            );
+                        }
 
-                // Type de champs
-                if (!empty($current_rule['type'])) {
-                    switch ($current_rule['type']) {
-                        case 'email':
-                            if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
-                                $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être email valide.";
-                                continue;
-                            }
-                            break;
+                        // Date + Heure FR (année courte)
+                        elseif (preg_match("#^([0-3]?[0-9])(\/|-)?([0-1]?[0-9])(\/|-)?([0-9]{2}) ([0-9]{2}):([0-9]{2})(:[0-9]{2})?$#i", $value, $row)) {
+                            $value = sprintf(
+                                '20%d-%02d-%02d %02d:%02d:%02d',
+                                $row[5],
+                                $row[3],
+                                $row[1],
+                                $row[6],
+                                $row[7],
+                                $row[9] ?? 0
+                            );
+                        }
 
-                        case 'int':
-                            if (!is_numeric($value)) {
-                                $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être nombre valide.";
-                                continue;
-                            }
-                            break;
-
-                        case 'url':
-                            //if(!filter_var($value, FILTER_VALIDATE_URL)) // Certains caractères excentrique de econocom ne passait pas.
-                            if (!preg_match('#https?://([^/]+)/#', $value)) {
-                                $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être une url valide.";
-                                continue;
-                            }
-                            break;
-
-                        case 'date':
-                            // Format de date spécifié
-                            if (!empty($current_rule['date_format'])) {
-                                try {
-                                    $value = DateTime::createFromFormat($current_rule['date_format'], $value);
-                                } catch (Exception $e) {
-                                    $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être une date valide: ".$e->getMessage();
-                                    continue;
-                                }
-
-                                $value = $value->format('Y-m-d');
-                            }
-                            // Date US
-                            elseif (preg_match("#^([0-9]{4})(\/|-)?([0-1]?[0-9])(\/|-)?([0-3]?[0-9])$#i", $value, $row)) {
-                                $value = sprintf('%4d-%02d-%02d', $row[1], $row[3], $row[5]);
+                        // Date inconnu
+                        else {
+                            $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être une date valide";
+                            if (!empty($current_rule['comment'])) {
+                                $errors[$key] .= " ({$current_rule['comment']})";
                             }
 
-                            // Date FR
-                            elseif (preg_match("#^([0-3]?[0-9])(\/|-)?([0-1]?[0-9])(\/|-)?([0-9]{4})$#i", $value, $row)) {
-                                $value = sprintf('%4d-%02d-%02d', $row[5], $row[3], $row[1]);
-                            }
+                            $errors[$key] .= '.';
+                            continue 2;
+                        }
+                        break;
 
-                            // Date FR (année courte)
-                            elseif (preg_match("#^([0-3]?[0-9])(\/|-)?([0-1]?[0-9])(\/|-)?([0-9]{2})$#i", $value, $row)) {
-                                $value = sprintf('20%d-%02d-%02d', $row[5], $row[3], $row[1]);
-                            }
+                    case 'bool':
+                        if (in_array(mb_strtolower($value), [true, 'true', 'vrai', 'yes', 'oui'], true)) {
+                            $value = 1;
+                        } elseif (in_array(mb_strtolower($value), [false, 'false', 'faux', 'no', 'non'], true)) {
+                            $value = 0;
+                        } else {
+                            $errors[$key] .= "Le champ {$current_rule['field_libelle']} ($key) doit être une valeur 1 (vrai) ou 0 (faux)";
+                            continue 2;
+                        }
 
-                            // Date inconnu
-                            else {
-                                $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être une date valide";
-                                if (!empty($current_rule['comment'])) {
-                                    $errors[$key] .= " ({$current_rule['comment']})";
-                                }
-
-                                $errors[$key] .= '.';
-                                continue;
-                            }
-                            break;
-
-                        case 'datetime':
-                            // Date + Heure US
-                            if (preg_match("#^([0-9]{4})(\/|-)?([0-1]?[0-9])(\/|-)?([0-3]?[0-9]) ([0-9]{2}):([0-9]{2})(:[0-9]{2})?$#i", $value, $row)) {
-                                $value = sprintf('%4d-%02d-%02d %02d:%02d:%02d', $row[1], $row[3], $row[5], $row[6], $row[7], (isset($row[9]) ? $row[9] : 0));
-                            }
-
-                            // Date + Heure FR
-                            elseif (preg_match("#^([0-3]?[0-9])(\/|-)?([0-1]?[0-9])(\/|-)?([0-9]{4}) ([0-9]{2}):([0-9]{2})(:[0-9]{2})?$#i", $value, $row)) {
-                                $value = sprintf('%4d-%02d-%02d %02d:%02d:%02d', $row[5], $row[3], $row[1], $row[6], $row[7], (isset($row[9]) ? $row[9] : 0));
-                            }
-
-                            // Date + Heure FR (année courte)
-                            elseif (preg_match("#^([0-3]?[0-9])(\/|-)?([0-1]?[0-9])(\/|-)?([0-9]{2}) ([0-9]{2}):([0-9]{2})(:[0-9]{2})?$#i", $value, $row)) {
-                                $value = sprintf('20%d-%02d-%02d %02d:%02d:%02d', $row[5], $row[3], $row[1], $row[6], $row[7], (isset($row[9]) ? $row[9] : 0));
-                            }
-
-                            // Date inconnu
-                            else {
-                                $errors[$key] = "Le champ {$current_rule['field_libelle']} ($key) doit être une date valide";
-                                if (!empty($current_rule['comment'])) {
-                                    $errors[$key] .= " ({$current_rule['comment']})";
-                                }
-
-                                $errors[$key] .= '.';
-                                continue;
-                            }
-                            break;
-
-                        case 'bool':
-                            if (in_array(mb_strtolower($value), [true, 'true', 'vrai', 'yes', 'oui'], true)) {
-                                $value = 1;
-                            } elseif (in_array(mb_strtolower($value), [false, 'false', 'faux', 'no', 'non'], true)) {
-                                $value = 0;
-                            } else {
-                                $errors[$key] .= "Le champ {$current_rule['field_libelle']} ($key) doit être une valeur 1 (vrai) ou 0 (faux)";
-                                continue;
-                            }
-
-                            break;
-                    }
+                        break;
                 }
             }
 
@@ -230,7 +253,7 @@ class MatriceFields
             return $errors;
         }
 
-        $this->export_array = $export;
+        $this->exportArray = $export;
 
         return true;
     }
@@ -238,22 +261,20 @@ class MatriceFields
     /**
      * Exporte les champs pour être sauvegarder dans une entité
      * L'export fournit un array pour être utiliser avec une entité.
-     *
-     * @return array
      */
-    public function export_fields_to_array()
+    public function exportFieldsToArray(): array
     {
-        if (empty($this->export_array)) {
+        if (empty($this->exportArray)) {
             throw new InvalidArgumentException('Il faut lancer check_fields($data) avec succès avant d\'exporter.');
         }
 
-        return $this->export_array;
+        return $this->exportArray;
     }
 
     /**
      * Exporte les règles de la matrice sous forme d'un tableau html.
      */
-    public function export_fields_to_user($title = null)
+    public function exportFieldsToUser(?string $title = null): string
     {
         $rules = $this->rules;
 

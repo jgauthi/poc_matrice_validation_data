@@ -15,7 +15,7 @@ class ArrayUtils
      *
      * @return string HTML Table
      */
-    static public function to_html_table_title_filter_col($data, $title_table, $cols_display, $encode = 'UTF-8')
+    static public function to_html_table_title_filter_col(array $data, ?string $title_table, array $cols_display, string $encode = 'UTF-8'): string
     {
         if (empty($data) || !is_array($data)) {
             throw new InvalidArgumentException('Argument data is empty or is not an array.');
