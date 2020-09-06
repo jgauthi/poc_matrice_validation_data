@@ -1,0 +1,26 @@
+[
+    {
+        "Dossier": "ASG_TESTLOCAL485",
+        "numSerie": "ABC",
+        "datedistribution": "5juil2018",
+        "datedistribution_effective": "2018-06-28 16:13:21",
+        "signature": "signature485.jpg",
+        "Rne": "00818B"
+    },
+    {
+        "Dossier": "ASG_TESTLOCAL707",
+        "numSerie": "483",
+        "datedistribution": "2018-06-31",
+        "datedistribution_effective": "2018-06-31 15:00:21",
+        "signature": null,
+        "Rne": "0080040A\u00e9"
+    },
+    {
+        "Dossier": "ASG_TESTLOCAL01",
+        "numSerie": null,
+        "datedistribution": "14-06-2018",
+        "datedistribution_effective": "21-06-2018 17:11",
+        "signature": null,
+        "Rne": "00808R"
+    }
+]

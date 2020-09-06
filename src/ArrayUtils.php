@@ -23,7 +23,7 @@ class ArrayUtils
 
         $html = '<table class="table table-striped" border="1">';
         if (!empty($title_table)) {
-            $html .= '<caption>'.htmltxt($title_table, $encode).'</caption>';
+            $html .= '<caption>'.htmlentities($title_table, ENT_COMPAT, $encode).'</caption>';
         }
 
         // Titre
