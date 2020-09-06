@@ -1,0 +1,16 @@
+{
+  "name": "jgauthi/poc_matrice_validation_data",
+  "description": "Tool used to process an array of data compared to a matrix",
+  "type": "library",
+  "homepage": "https://github.com/jgauthi/poc_matrice_validation_data",
+  "require": {
+    "php": ">=5.6"
+  },
+  "autoload": {
+    "psr-4": { "Jgauthi\\Tools\\Matrice\\": "src/" }
+  },
+  "license": "GPL-3.0",
+  "authors": [
+    { "name": "jgauthi", "homepage": "https://github.com/jgauthi" }
+  ]
+}
